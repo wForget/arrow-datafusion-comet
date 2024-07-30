@@ -90,8 +90,9 @@ allowed_expr+="|^org/apache/spark/shuffle/comet/.*$"
 allowed_expr+="|^org/apache/spark/sql/$"
 # allow ExplainPlanGenerator trait since it may not be available in older Spark versions
 allowed_expr+="|^org/apache/spark/sql/ExtendedExplainGenerator.*$"
-allowed_expr+="|^org/apache/spark/CometPlugin.class$"
+allowed_expr+="|^org/apache/spark/CometPlugin.*$"
 allowed_expr+="|^org/apache/spark/CometDriverPlugin.*$"
+allowed_expr+="|^org/apache/spark/CometExecutorPlugin.*$"
 allowed_expr+="|^org/apache/spark/CometTaskMemoryManager.class$"
 allowed_expr+="|^org/apache/spark/CometTaskMemoryManager.*$"
 

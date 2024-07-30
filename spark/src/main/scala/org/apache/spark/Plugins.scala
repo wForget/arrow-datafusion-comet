@@ -22,12 +22,14 @@ package org.apache.spark
 import java.{util => ju}
 import java.util.Collections
 
+import org.apache.spark.CometPlugin.ensureNativeLoaded
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.comet.shims.ShimCometDriverPlugin
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.{EXECUTOR_MEMORY, EXECUTOR_MEMORY_OVERHEAD}
 
-import org.apache.comet.{CometConf, CometSparkSessionExtensions}
+import org.apache.comet.{CometConf, CometRuntimeException, CometSparkSessionExtensions, NativeBase}
+import org.apache.comet.CometConf.{COMET_ENABLED, COMET_NATIVE_LOAD_REQUIRED}
 
 /**
  * Comet driver plugin. This class is loaded by Spark's plugin framework. It will be instantiated
@@ -43,6 +45,8 @@ import org.apache.comet.{CometConf, CometSparkSessionExtensions}
 class CometDriverPlugin extends DriverPlugin with Logging with ShimCometDriverPlugin {
   override def init(sc: SparkContext, pluginContext: PluginContext): ju.Map[String, String] = {
     logInfo("CometDriverPlugin init")
+
+    ensureNativeLoaded(sc.getConf)
 
     if (shouldOverrideMemoryConf(sc.getConf)) {
       val execMemOverhead = if (sc.getConf.contains(EXECUTOR_MEMORY_OVERHEAD.key)) {
@@ -95,11 +99,48 @@ class CometDriverPlugin extends DriverPlugin with Logging with ShimCometDriverPl
 }
 
 /**
+ * Comet executor plugin. Check if Native is loaded during executor initialization.
+ */
+class CometExecutorPlugin extends ExecutorPlugin with Logging {
+
+  override def init(ctx: PluginContext, extraConf: ju.Map[String, String]): Unit = {
+    logInfo("CometExecutorPlugin init")
+
+    ensureNativeLoaded(ctx.conf())
+  }
+}
+
+/**
  * The Comet plugin for Spark. To enable this plugin, set the config "spark.plugins" to
  * `org.apache.spark.CometPlugin`
  */
 class CometPlugin extends SparkPlugin with Logging {
   override def driverPlugin(): DriverPlugin = new CometDriverPlugin
 
-  override def executorPlugin(): ExecutorPlugin = null
+  override def executorPlugin(): ExecutorPlugin = new CometExecutorPlugin
+}
+
+object CometPlugin extends Logging {
+
+  def ensureNativeLoaded(conf: SparkConf): Boolean = {
+    try {
+      // This will load the Comet native lib on demand, and if success, should set
+      // `NativeBase.loaded` to true
+      NativeBase.isLoaded
+    } catch {
+      case e: Throwable =>
+        if (conf.getBoolean(COMET_NATIVE_LOAD_REQUIRED.key, false)) {
+          throw new CometRuntimeException(
+            "Error when loading native library. Please fix the error and try again, or fallback " +
+              s"to Spark by setting ${COMET_ENABLED.key} to false",
+            e)
+        } else {
+          logWarning(
+            s"Ignore load comet native library error due to ${COMET_NATIVE_LOAD_REQUIRED.key}" +
+              " is false.",
+            e)
+        }
+        false
+    }
+  }
 }
