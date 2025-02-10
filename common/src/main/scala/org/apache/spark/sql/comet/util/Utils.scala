@@ -29,7 +29,7 @@ import org.apache.arrow.c.CDataDictionaryProvider
 import org.apache.arrow.vector.{BigIntVector, BitVector, DateDayVector, DecimalVector, FieldVector, FixedSizeBinaryVector, Float4Vector, Float8Vector, IntVector, SmallIntVector, TimeStampMicroTZVector, TimeStampMicroVector, TinyIntVector, ValueVector, VarBinaryVector, VarCharVector, VectorSchemaRoot}
 import org.apache.arrow.vector.complex.{ListVector, MapVector, StructVector}
 import org.apache.arrow.vector.dictionary.DictionaryProvider
-import org.apache.arrow.vector.ipc.ArrowStreamWriter
+import org.apache.arrow.vector.ipc.{ArrowStreamReader, ArrowStreamWriter}
 import org.apache.arrow.vector.types._
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
 import org.apache.spark.{SparkEnv, SparkException}
@@ -39,7 +39,8 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.io.{ChunkedByteBuffer, ChunkedByteBufferOutputStream}
 
-import org.apache.comet.vector.CometVector
+import org.apache.comet.CometArrowAllocator
+import org.apache.comet.vector.{CometVector, NativeUtil}
 
 object Utils {
   def getConfPath(confFileName: String): String = {
@@ -246,6 +247,18 @@ object Utils {
     val ins = new DataInputStream(codec.compressedInputStream(cbbis))
     // batches are in Arrow IPC format
     new ArrowReaderIterator(Channels.newChannel(ins), source)
+  }
+
+  def deserializeBatches(
+      chunkedByteBuffers: Iterator[ChunkedByteBuffer]): Iterator[ColumnarBatch] = {
+    val codec = CompressionCodec.createCodec(SparkEnv.get.conf)
+    chunkedByteBuffers.map { chunkedByteBuffer =>
+      val cbbis = chunkedByteBuffer.toInputStream()
+      val in = new DataInputStream(codec.compressedInputStream(cbbis))
+      val reader = new ArrowStreamReader(in, CometArrowAllocator)
+      reader.loadNextBatch()
+      NativeUtil.rootAsBatch(reader.getVectorSchemaRoot, reader)
+    }
   }
 
   def getBatchFieldVectors(
