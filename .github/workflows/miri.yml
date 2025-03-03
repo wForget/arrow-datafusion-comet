@@ -19,6 +19,9 @@ name: Run Miri Safety Checks
 
 on:
   push:
+    branches:
+      - main
+      - branch-*
     paths-ignore:
       - "doc/**"
       - "docs/**"

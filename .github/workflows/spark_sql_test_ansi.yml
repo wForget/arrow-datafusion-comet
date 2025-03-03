@@ -23,6 +23,9 @@ concurrency:
 
 on:
   push:
+    branches:
+      - main
+      - branch-*
     paths-ignore:
       - "docs/**"
       - "**.md"
