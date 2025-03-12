@@ -101,6 +101,12 @@ impl HadoopFileSystem {
             to_read,
             read
         );
+        println!(
+            "Read path {} from {} with size {}",
+            file.path(),
+            range.start,
+            read
+        );
         Ok(buf.into())
     }
 }
@@ -148,7 +154,7 @@ impl ObjectStore for HadoopFileSystem {
                 "Read path {} with expected size {} and actual size {}",
                 &location, to_read, read
             );
-
+            println!("Read path {} √ {}", &location, read);
             file.close().map_err(to_error)?;
 
             let object_metadata = convert_metadata(file_status.clone(), &hdfs_root);
@@ -161,11 +167,9 @@ impl ObjectStore for HadoopFileSystem {
             Ok((buf.into(), object_metadata, range))
         })
         .await?;
-
+        let stream = futures::stream::once(futures::future::ready(Ok(blob)));
         Ok(GetResult {
-            payload: GetResultPayload::Stream(
-                futures::stream::once(async move { Ok(blob) }).boxed(),
-            ),
+            payload: GetResultPayload::Stream(stream.boxed()),
             meta: object_metadata,
             range,
             attributes: Default::default(),
@@ -173,6 +177,10 @@ impl ObjectStore for HadoopFileSystem {
     }
 
     async fn get_opts(&self, location: &Path, options: GetOptions) -> Result<GetResult> {
+        println!(
+            "HadoopFileSystem::get_opts location: {:?}, options: {:?}",
+            location, options
+        );
         if options.if_match.is_some() || options.if_none_match.is_some() {
             return Err(Error::Generic {
                 store: "HadoopFileSystem",
@@ -211,10 +219,9 @@ impl ObjectStore for HadoopFileSystem {
         })
         .await?;
 
+        let stream = futures::stream::once(futures::future::ready(Ok(blob)));
         Ok(GetResult {
-            payload: GetResultPayload::Stream(
-                futures::stream::once(async move { Ok(blob) }).boxed(),
-            ),
+            payload: GetResultPayload::Stream(stream.boxed()),
             meta: object_metadata,
             range,
             attributes: Default::default(),
@@ -222,6 +229,10 @@ impl ObjectStore for HadoopFileSystem {
     }
 
     async fn get_range(&self, location: &Path, range: Range<usize>) -> Result<Bytes> {
+        println!(
+            "HadoopFileSystem::get_range location: {:?}, range: {:?}",
+            location, range
+        );
         let hdfs = self.hdfs.clone();
         let location = HadoopFileSystem::path_to_filesystem(location);
 
@@ -236,6 +247,10 @@ impl ObjectStore for HadoopFileSystem {
     }
 
     async fn get_ranges(&self, location: &Path, ranges: &[Range<usize>]) -> Result<Vec<Bytes>> {
+        println!(
+            "HadoopFileSystem::get_ranges location: {:?}, ranges: {:?}",
+            location, ranges
+        );
         coalesce_ranges(
             ranges,
             |range| self.get_range(location, range),
@@ -245,6 +260,7 @@ impl ObjectStore for HadoopFileSystem {
     }
 
     async fn head(&self, location: &Path) -> Result<ObjectMeta> {
+        println!("HadoopFileSystem::head location: {:?}", location);
         let hdfs = self.hdfs.clone();
         let hdfs_root = self.hdfs.url().to_owned();
         let location = HadoopFileSystem::path_to_filesystem(location);
@@ -271,6 +287,7 @@ impl ObjectStore for HadoopFileSystem {
     /// List all of the leaf files under the prefix path.
     /// It will recursively search leaf files whose depth is larger than 1
     fn list(&self, prefix: Option<&Path>) -> BoxStream<'_, Result<ObjectMeta>> {
+        println!("HadoopFileSystem::list prefix: {:?}", prefix);
         let default_path = Path::from(self.get_path_root());
         let prefix = prefix.unwrap_or(&default_path);
         let hdfs = self.hdfs.clone();
@@ -327,6 +344,7 @@ impl ObjectStore for HadoopFileSystem {
     /// List files and directories directly under the prefix path.
     /// It will not recursively search leaf files whose depth is larger than 1
     async fn list_with_delimiter(&self, prefix: Option<&Path>) -> Result<ListResult> {
+        println!("HadoopFileSystem::list_with_delimiter prefix: {:?}", prefix);
         let default_path = Path::from(self.get_path_root());
         let prefix = prefix.unwrap_or(&default_path);
         let hdfs = self.hdfs.clone();

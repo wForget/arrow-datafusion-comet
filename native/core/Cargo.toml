@@ -77,7 +77,7 @@ datafusion-comet-proto = { workspace = true }
 object_store = { workspace = true }
 url = { workspace = true }
 parking_lot = "0.12.3"
-datafusion-comet-objectstore-hdfs = { path = "../hdfs", optional = true}
+datafusion-comet-objectstore-hdfs = { path = "../hdfs", optional = true, features = ["hdfs", "try_spawn_blocking"]}
 
 [dev-dependencies]
 pprof = { version = "0.14.0", features = ["flamegraph"] }
@@ -88,7 +88,7 @@ assertables = "7"
 hex = "0.4.3"
 
 [features]
-default = []
+default = ['hdfs']
 hdfs=["datafusion-comet-objectstore-hdfs"]
 
 # exclude optional packages from cargo machete verifications

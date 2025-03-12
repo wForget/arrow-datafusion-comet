@@ -22,15 +22,16 @@ package org.apache.spark.sql.benchmark
 import java.io.File
 
 import scala.collection.JavaConverters._
-import scala.util.Random
 
+import org.apache.hadoop.fs.Path
 import org.apache.spark.TestUtils
 import org.apache.spark.benchmark.Benchmark
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.datasources.parquet.VectorizedParquetRecordReader
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnVector
 
-import org.apache.comet.CometConf
+import org.apache.comet.{CometConf, WithHdfsCluster}
 import org.apache.comet.CometConf.{SCAN_NATIVE_COMET, SCAN_NATIVE_DATAFUSION, SCAN_NATIVE_ICEBERG_COMPAT}
 import org.apache.comet.parquet.BatchReader
 
@@ -40,7 +41,7 @@ import org.apache.comet.parquet.BatchReader
  * benchmark-org.apache.spark.sql.benchmark.CometReadBenchmark` Results will be written to
  * "spark/benchmarks/CometReadBenchmark-**results.txt".
  */
-object CometReadBenchmark extends CometBenchmarkBase {
+class CometReadBaseBenchmark extends CometBenchmarkBase {
 
   def numericScanBenchmark(values: Int, dataType: DataType): Unit = {
     // Benchmarks running through spark sql.
@@ -63,6 +64,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         sqlBenchmark.addCase("SQL Parquet - Comet") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_COMET) {
             spark.sql(s"select $query from parquetV1Table").noop()
           }
@@ -71,18 +73,20 @@ object CometReadBenchmark extends CometBenchmarkBase {
         sqlBenchmark.addCase("SQL Parquet - Comet Native DataFusion") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_DATAFUSION) {
             spark.sql(s"select $query from parquetV1Table").noop()
           }
         }
 
-        sqlBenchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
-          withSQLConf(
-            CometConf.COMET_ENABLED.key -> "true",
-            CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
-            spark.sql(s"select $query from parquetV1Table").noop()
-          }
-        }
+//        sqlBenchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
+//          withSQLConf(
+//            CometConf.COMET_ENABLED.key -> "true",
+//            CometConf.COMET_EXEC_ENABLED.key -> "true",
+//            CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
+//            spark.sql(s"select $query from parquetV1Table").noop()
+//          }
+//        }
 
         sqlBenchmark.run()
       }
@@ -118,6 +122,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         sqlBenchmark.addCase("SQL Parquet - Comet Native DataFusion") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_DATAFUSION) {
             spark.sql("select sum(id) from parquetV1Table").noop()
           }
@@ -126,6 +131,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         sqlBenchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
             spark.sql("select sum(id) from parquetV1Table").noop()
           }
@@ -244,6 +250,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native DataFusion") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_DATAFUSION) {
             spark.sql("select sum(c2) from parquetV1Table where c1 + 1 > 0").noop()
           }
@@ -252,6 +259,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
             spark.sql("select sum(c2) from parquetV1Table where c1 + 1 > 0").noop()
           }
@@ -300,6 +308,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         sqlBenchmark.addCase("SQL Parquet - Comet Native DataFusion") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_DATAFUSION) {
             spark.sql("select sum(length(id)) from parquetV1Table").noop()
           }
@@ -308,6 +317,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         sqlBenchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
             spark.sql("select sum(length(id)) from parquetV1Table").noop()
           }
@@ -352,6 +362,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native DataFusion") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_DATAFUSION) {
             spark
               .sql("select sum(length(c2)) from parquetV1Table where c1 is " +
@@ -363,6 +374,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
             spark
               .sql("select sum(length(c2)) from parquetV1Table where c1 is " +
@@ -403,6 +415,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native DataFusion") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_DATAFUSION) {
             spark.sql(s"SELECT sum(c$middle) FROM parquetV1Table").noop()
           }
@@ -411,6 +424,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
             spark.sql(s"SELECT sum(c$middle) FROM parquetV1Table").noop()
           }
@@ -452,6 +466,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native DataFusion") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_DATAFUSION) {
             spark.sql("SELECT * FROM parquetV1Table WHERE c1 + 1 > 0").noop()
           }
@@ -460,6 +475,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
             spark.sql("SELECT * FROM parquetV1Table WHERE c1 + 1 > 0").noop()
           }
@@ -501,6 +517,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native DataFusion") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_DATAFUSION) {
             spark.sql("SELECT * FROM parquetV1Table WHERE c1 + 1 > 0").noop()
           }
@@ -509,6 +526,7 @@ object CometReadBenchmark extends CometBenchmarkBase {
         benchmark.addCase("SQL Parquet - Comet Native Iceberg Compat") { _ =>
           withSQLConf(
             CometConf.COMET_ENABLED.key -> "true",
+            CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> SCAN_NATIVE_ICEBERG_COMPAT) {
             spark.sql("SELECT * FROM parquetV1Table WHERE c1 + 1 > 0").noop()
           }
@@ -520,70 +538,113 @@ object CometReadBenchmark extends CometBenchmarkBase {
   }
 
   override def runCometBenchmark(mainArgs: Array[String]): Unit = {
-    runBenchmarkWithTable("Parquet Reader", 1024 * 1024 * 15) { v =>
-      Seq(
-        BooleanType,
-        ByteType,
-        ShortType,
-        IntegerType,
-        LongType,
-        FloatType,
-        DoubleType,
-        StringType).foreach { dataType =>
-        readerBenchmark(v, dataType)
-      }
-    }
+//    runBenchmarkWithTable("Parquet Reader", 1024 * 1024 * 15) { v =>
+//      Seq(
+//        BooleanType,
+//        ByteType,
+//        ShortType,
+//        IntegerType,
+//        LongType,
+//        FloatType,
+//        DoubleType,
+//        StringType).foreach { dataType =>
+//        readerBenchmark(v, dataType)
+//      }
+//    }
 
     runBenchmarkWithTable("SQL Single Numeric Column Scan", 1024 * 1024 * 15) { v =>
-      Seq(BooleanType, ByteType, ShortType, IntegerType, LongType, FloatType, DoubleType)
+      // Seq(BooleanType, ByteType, ShortType, IntegerType, LongType, FloatType, DoubleType)
+      Seq(BooleanType)
         .foreach { dataType =>
           numericScanBenchmark(v, dataType)
         }
     }
 
-    runBenchmark("SQL Decimal Column Scan") {
-      withTempTable(tbl) {
-        import spark.implicits._
-        spark.range(1024 * 1024 * 15).map(_ => Random.nextInt).createOrReplaceTempView(tbl)
+//    runBenchmark("SQL Decimal Column Scan") {
+//      withTempTable(tbl) {
+//        import spark.implicits._
+//        spark.range(1024 * 1024 * 15).map(_ => Random.nextInt).createOrReplaceTempView(tbl)
+//
+//        Seq((5, 2), (18, 4), (20, 8)).foreach { case (precision, scale) =>
+//          decimalScanBenchmark(1024 * 1024 * 15, precision, scale)
+//        }
+//      }
+//    }
+//
+//    runBenchmarkWithTable("String Scan with Dictionary", 1024 * 1024 * 15) { v =>
+//      stringWithDictionaryScanBenchmark(v)
+//    }
+//
+//    runBenchmarkWithTable("Numeric Filter Scan", 1024 * 1024 * 10) { v =>
+//      for (fractionOfZeros <- List(0.0, 0.50, 0.95)) {
+//        numericFilterScanBenchmark(v, fractionOfZeros)
+//      }
+//    }
+//
+//    runBenchmarkWithTable("String with Nulls Scan", 1024 * 1024 * 10) { v =>
+//      for (fractionOfNulls <- List(0.0, 0.50, 0.95)) {
+//        stringWithNullsScanBenchmark(v, fractionOfNulls)
+//      }
+//    }
+//
+//    runBenchmarkWithTable("Single Column Scan From Wide Columns", 1024 * 1024 * 1) { v =>
+//      for (columnWidth <- List(10, 50, 100)) {
+//        columnsBenchmark(v, columnWidth)
+//      }
+//    }
+//
+//    runBenchmarkWithTable("Large String Filter Scan", 1024 * 1024) { v =>
+//      for (fractionOfZeros <- List(0.0, 0.50, 0.999)) {
+//        largeStringFilterScanBenchmark(v, fractionOfZeros)
+//      }
+//    }
+//
+//    runBenchmarkWithTable("Sorted Lg Str Filter Scan", 1024 * 1024) { v =>
+//      for (fractionOfZeros <- List(0.0, 0.50, 0.999)) {
+//        sortedLgStrFilterScanBenchmark(v, fractionOfZeros)
+//      }
+//    }
+  }
+}
 
-        Seq((5, 2), (18, 4), (20, 8)).foreach { case (precision, scale) =>
-          decimalScanBenchmark(1024 * 1024 * 15, precision, scale)
-        }
-      }
-    }
+object CometReadBenchmark extends CometReadBaseBenchmark {}
 
-    runBenchmarkWithTable("String Scan with Dictionary", 1024 * 1024 * 15) { v =>
-      stringWithDictionaryScanBenchmark(v)
-    }
+object CometReadHdfsBenchmark extends CometReadBaseBenchmark with WithHdfsCluster {
 
-    runBenchmarkWithTable("Numeric Filter Scan", 1024 * 1024 * 10) { v =>
-      for (fractionOfZeros <- List(0.0, 0.50, 0.95)) {
-        numericFilterScanBenchmark(v, fractionOfZeros)
-      }
-    }
+  override def runCometBenchmark(mainArgs: Array[String]): Unit = {
+    startHdfsCluster()
+    super.runCometBenchmark(mainArgs)
+  }
 
-    runBenchmarkWithTable("String with Nulls Scan", 1024 * 1024 * 10) { v =>
-      for (fractionOfNulls <- List(0.0, 0.50, 0.95)) {
-        stringWithNullsScanBenchmark(v, fractionOfNulls)
-      }
-    }
+  override def afterAll(): Unit = {
+    super.afterAll()
+    stopHdfsCluster()
+  }
 
-    runBenchmarkWithTable("Single Column Scan From Wide Columns", 1024 * 1024 * 1) { v =>
-      for (columnWidth <- List(10, 50, 100)) {
-        columnsBenchmark(v, columnWidth)
-      }
-    }
+  override def readerBenchmark(values: Int, dataType: DataType): Unit = {
+    // ignore reader benchmark for HDFS
+  }
 
-    runBenchmarkWithTable("Large String Filter Scan", 1024 * 1024) { v =>
-      for (fractionOfZeros <- List(0.0, 0.50, 0.999)) {
-        largeStringFilterScanBenchmark(v, fractionOfZeros)
-      }
+  // mock local dir to hdfs
+  override protected def withTempPath(f: File => Unit): Unit = {
+    super.withTempPath { dir =>
+      val tempHdfsPath = new Path(getTmpRootDir, dir.getName)
+      getFileSystem.mkdirs(tempHdfsPath)
+      try f(dir)
+      finally getFileSystem.delete(tempHdfsPath, true)
     }
-
-    runBenchmarkWithTable("Sorted Lg Str Filter Scan", 1024 * 1024) { v =>
-      for (fractionOfZeros <- List(0.0, 0.50, 0.999)) {
-        sortedLgStrFilterScanBenchmark(v, fractionOfZeros)
-      }
+  }
+  override protected def prepareTable(
+      dir: File,
+      df: DataFrame,
+      partition: Option[String]): Unit = {
+    val testDf = if (partition.isDefined) {
+      df.write.partitionBy(partition.get)
+    } else {
+      df.write
     }
+    val tempHdfsPath = getFileSystem.resolvePath(new Path(getTmpRootDir, dir.getName))
+    val parquetV1Path = new Path(tempHdfsPath, "parquetV1")
+    saveAsParquetV1Table(testDf, parquetV1Path.toString.replace("localhost", "127.0.0.1"))
   }
 }

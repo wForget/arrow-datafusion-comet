@@ -31,6 +31,7 @@ use datafusion_execution::object_store::ObjectStoreUrl;
 use datafusion_expr::ColumnarValue;
 use std::collections::HashMap;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
+use url::Url;
 
 static TIMESTAMP_FORMAT: Option<&str> = Some("%Y-%m-%d %H:%M:%S%.f");
 
@@ -199,9 +200,25 @@ fn cast_struct_to_struct(
     }
 }
 
-// Default object store which is local filesystem
-#[cfg(not(feature = "hdfs"))]
 pub(crate) fn register_object_store(
+    session_context: Arc<SessionContext>,
+    path: &str,
+) -> Result<ObjectStoreUrl, ExecutionError> {
+    let url = Url::parse(path).unwrap();
+    match url.scheme() {
+        "file" => register_local_object_store(session_context),
+        "hdfs" => {
+            let namenode_path = format!("hdfs://{}", url.authority());
+            register_hdfs_object_store(session_context, namenode_path.as_str())
+        }
+        s => Err(ExecutionError::GeneralError(format!(
+            "Unsupported object store schema: {}",
+            s
+        ))),
+    }
+}
+
+pub(crate) fn register_local_object_store(
     session_context: Arc<SessionContext>,
 ) -> Result<ObjectStoreUrl, ExecutionError> {
     let object_store = object_store::local::LocalFileSystem::new();
@@ -213,22 +230,30 @@ pub(crate) fn register_object_store(
 }
 
 // HDFS object store
-#[cfg(feature = "hdfs")]
-pub(crate) fn register_object_store(
+pub(crate) fn register_hdfs_object_store(
     session_context: Arc<SessionContext>,
+    path: &str,
 ) -> Result<ObjectStoreUrl, ExecutionError> {
     // TODO: read the namenode configuration from file schema or from spark.defaultFS
-    let url = ObjectStoreUrl::parse("hdfs://namenode:9000")?;
-    if let Some(object_store) =
-        datafusion_comet_objectstore_hdfs::object_store::hdfs::HadoopFileSystem::new(url.as_ref())
+    let url = ObjectStoreUrl::parse(path)?;
+    if session_context
+        .runtime_env()
+        .object_store_registry
+        .get_store(url.as_ref())
+        .is_err()
     {
-        session_context
-            .runtime_env()
-            .register_object_store(url.as_ref(), Arc::new(object_store));
+        if let Some(object_store) =
+            datafusion_comet_objectstore_hdfs::object_store::hdfs::HadoopFileSystem::new(
+                url.as_ref(),
+            )
+        {
+            session_context
+                .runtime_env()
+                .register_object_store(url.as_ref(), Arc::new(object_store));
 
-        return Ok(url);
+            return Ok(url);
+        }
     }
-
     Err(ExecutionError::GeneralError(format!(
         "HDFS object store cannot be created for {}",
         url

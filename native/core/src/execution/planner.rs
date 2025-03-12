@@ -1206,9 +1206,20 @@ impl PhysicalPlanner {
                     ))
                 });
 
-                // By default, local FS object store registered
-                // if `hdfs` feature enabled then HDFS file object store registered
-                let object_store_url = register_object_store(Arc::clone(&self.session_ctx))?;
+                // Register object store from first path
+                let path = scan
+                    .file_partitions
+                    .first()
+                    .map(|partition| {
+                        partition
+                            .partitioned_file
+                            .first()
+                            .map(|file| file.file_path.as_ref())
+                            .unwrap_or("file:///")
+                    })
+                    .unwrap_or("file:///");
+
+                let object_store_url = register_object_store(Arc::clone(&self.session_ctx), path)?;
 
                 // Generate file groups
                 let mut file_groups: Vec<Vec<PartitionedFile>> =
