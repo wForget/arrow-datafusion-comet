@@ -38,7 +38,7 @@ trait WithHdfsCluster extends Logging {
   private var hadoopConfDir: File = _
   private var hdfsCluster: MiniDFSCluster = _
   private var hdfsConf: Configuration = _
-  private val tmpRootDir: Path = new Path("/tmp")
+  private var tmpRootDir: Path = _
   private var fileSystem: FileSystem = _
 
   def startHdfsCluster(): Unit = {
@@ -49,7 +49,7 @@ trait WithHdfsCluster extends Logging {
     hdfsConf.set("dfs.namenode.metrics.logger.period.seconds", "0")
     hdfsConf.set("dfs.datanode.metrics.logger.period.seconds", "0")
     // Set bind host to localhost to avoid java.net.BindException
-    hdfsConf.setIfUnset("dfs.namenode.rpc-bind-host", "127.0.0.1")
+    hdfsConf.setIfUnset("dfs.namenode.rpc-bind-host", "localhost")
 
     hdfsCluster = new MiniDFSCluster.Builder(hdfsConf)
       .checkDataNodeAddrConfig(true)
@@ -63,6 +63,7 @@ trait WithHdfsCluster extends Logging {
     saveHadoopConf(hadoopConfDir)
 
     fileSystem = hdfsCluster.getFileSystem
+    tmpRootDir = new Path("/tmp")
     fileSystem.mkdirs(tmpRootDir)
   }
 
@@ -76,20 +77,19 @@ trait WithHdfsCluster extends Logging {
     val hostName = InetAddress.getLocalHost.getHostName
     hdfsConf.iterator().asScala.foreach { kv =>
       val key = kv.getKey
-      val value = kv.getValue.replaceAll(hostName, "127.0.0.1")
+      val value = kv.getValue.replaceAll(hostName, "localhost")
       configToWrite.set(key, value)
     }
     val file = new File(hadoopConfDir, "core-site.xml")
     val writer = new FileWriter(file)
     configToWrite.writeXml(writer)
     writer.close()
-    // add the configuration file to default resources
-    Configuration.addDefaultResource(file.toURI.toURL.toString)
   }
 
   def getHadoopConf: Configuration = hdfsConf
   def getDFSPort: Int = hdfsCluster.getNameNodePort
   def getHadoopConfDir: String = hadoopConfDir.getAbsolutePath
+  def getHadoopConfFile: Path = new Path(hadoopConfDir.toURI.toURL.toString, "core-site.xml")
   def getTmpRootDir: Path = tmpRootDir
   def getFileSystem: FileSystem = fileSystem
 

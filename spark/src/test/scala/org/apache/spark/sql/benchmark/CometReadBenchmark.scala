@@ -26,7 +26,7 @@ import scala.collection.JavaConverters._
 import org.apache.hadoop.fs.Path
 import org.apache.spark.TestUtils
 import org.apache.spark.benchmark.Benchmark
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.datasources.parquet.VectorizedParquetRecordReader
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnVector
@@ -554,7 +554,7 @@ class CometReadBaseBenchmark extends CometBenchmarkBase {
 
     runBenchmarkWithTable("SQL Single Numeric Column Scan", 1024 * 1024 * 15) { v =>
       // Seq(BooleanType, ByteType, ShortType, IntegerType, LongType, FloatType, DoubleType)
-      Seq(BooleanType)
+      Seq(IntegerType)
         .foreach { dataType =>
           numericScanBenchmark(v, dataType)
         }
@@ -611,8 +611,14 @@ object CometReadBenchmark extends CometReadBaseBenchmark {}
 
 object CometReadHdfsBenchmark extends CometReadBaseBenchmark with WithHdfsCluster {
 
-  override def runCometBenchmark(mainArgs: Array[String]): Unit = {
+  override def getSparkSession: SparkSession = {
     startHdfsCluster()
+    val sparkSession = super.getSparkSession
+    sparkSession.sparkContext.hadoopConfiguration.addResource(getHadoopConfFile)
+    sparkSession
+  }
+
+  override def runCometBenchmark(mainArgs: Array[String]): Unit = {
     super.runCometBenchmark(mainArgs)
   }
 
@@ -645,6 +651,6 @@ object CometReadHdfsBenchmark extends CometReadBaseBenchmark with WithHdfsCluste
     }
     val tempHdfsPath = getFileSystem.resolvePath(new Path(getTmpRootDir, dir.getName))
     val parquetV1Path = new Path(tempHdfsPath, "parquetV1")
-    saveAsParquetV1Table(testDf, parquetV1Path.toString.replace("localhost", "127.0.0.1"))
+    saveAsParquetV1Table(testDf, parquetV1Path.toString)
   }
 }
