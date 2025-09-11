@@ -174,8 +174,10 @@ pub use comet_exec::*;
 mod batch_iterator;
 mod comet_metric_node;
 mod comet_task_memory_manager;
+mod comet_io_read;
 
 use crate::{errors::CometError, JAVA_VM};
+use comet_io_read::CometIORead;
 use batch_iterator::CometBatchIterator;
 pub use comet_metric_node::*;
 pub use comet_task_memory_manager::*;
@@ -202,6 +204,8 @@ pub struct JVMClasses<'a> {
     pub comet_metric_node: CometMetricNode<'a>,
     /// The static CometExec class. Used for getting the subquery result.
     pub comet_exec: CometExec<'a>,
+    /// The CometIORead class. Used for reading data from Java InputStream.
+    pub comet_io_read: CometIORead<'a>,
     /// The CometBatchIterator class. Used for iterating over the batches.
     pub comet_batch_iterator: CometBatchIterator<'a>,
     /// The CometTaskMemoryManager used for interacting with JVM side to
@@ -256,6 +260,7 @@ impl JVMClasses<'_> {
                 throwable_get_cause_method,
                 comet_metric_node: CometMetricNode::new(env).unwrap(),
                 comet_exec: CometExec::new(env).unwrap(),
+                comet_io_read: CometIORead::new(env).unwrap(),
                 comet_batch_iterator: CometBatchIterator::new(env).unwrap(),
                 comet_task_memory_manager: CometTaskMemoryManager::new(env).unwrap(),
             }

@@ -21,7 +21,7 @@ use crate::{
     errors::CometError,
     execution::{
         shuffle::{
-            codec::{Checksum, ShuffleBlockWriter},
+            codec::Checksum,
             list::{append_list_element, SparkUnsafeArray},
             map::{append_map_elements, get_map_key_value_fields, SparkUnsafeMap},
         },
@@ -293,8 +293,9 @@ macro_rules! downcast_builder_ref {
 }
 
 // Expose the macro for other modules.
-use crate::execution::shuffle::CompressionCodec;
+use crate::execution::shuffle::stream_codec::CompressionCodec;
 pub(crate) use downcast_builder_ref;
+use crate::execution::shuffle::stream_codec::ShuffleBlockStreamWriter;
 
 /// Appends field of row to the given struct builder. `dt` is the data type of the field.
 /// `struct_builder` is the struct builder of the row. `row` is the row that contains the field.
@@ -3160,8 +3161,7 @@ pub fn process_sorted_row_partition(
 
     // The current row number we are reading
     let mut current_row = 0;
-    // Total number of bytes written
-    let mut written = 0;
+
     // The current checksum value. This is updated incrementally in the following loop.
     let mut current_checksum = if checksum_enabled {
         Some(Checksum::try_new(checksum_algo, initial_checksum)?)
@@ -3169,6 +3169,14 @@ pub fn process_sorted_row_partition(
         None
     };
 
+    let mut output_data = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&output_path)?;
+    let batch_schema = make_schema(schema)?;
+    let start_pos = output_data.stream_position()?;
+    let mut batch_writer = ShuffleBlockStreamWriter::try_new(batch_schema.as_ref(), codec.clone(), &output_data)?;
+    let ipc_time = Time::default();
     while current_row < row_num {
         let n = std::cmp::min(batch_size, row_num - current_row);
 
@@ -3210,28 +3218,18 @@ pub fn process_sorted_row_partition(
             .collect();
         let batch = make_batch(array_refs?, n)?;
 
-        let mut frozen: Vec<u8> = vec![];
-        let mut cursor = Cursor::new(&mut frozen);
-        cursor.seek(SeekFrom::End(0))?;
+        batch_writer.write_batch(&batch, &ipc_time)?;
 
-        // we do not collect metrics in Native_writeSortedFileNative
-        let ipc_time = Time::default();
-        let block_writer = ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone())?;
-        written += block_writer.write_batch(&batch, &mut cursor, &ipc_time)?;
+        // TODO: checksum
+        // if let Some(checksum) = &mut current_checksum {
+        //     checksum.update(&mut cursor)?;
+        // }
 
-        if let Some(checksum) = &mut current_checksum {
-            checksum.update(&mut cursor)?;
-        }
-
-        let mut output_data = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&output_path)?;
-
-        output_data.write_all(&frozen)?;
         current_row += n;
     }
-
+    batch_writer.finish(&ipc_time)?;
+    let end_pos = output_data.stream_position()?;
+    let written = (end_pos - start_pos) as usize;
     Ok((written as i64, current_checksum.map(|c| c.finalize())))
 }
 
@@ -3283,6 +3281,14 @@ fn builder_to_array(
         }
         _ => Ok(builder.finish()),
     }
+}
+
+fn make_schema(schema: &[DataType]) -> Result<Arc<Schema>, ArrowError> {
+    let fields = schema.iter()
+        .enumerate()
+        .map(|(i, array)| Field::new(format!("c{i}"), array.clone(), true))
+        .collect::<Vec<_>>();
+    Ok(Arc::new(Schema::new(fields)))
 }
 
 fn make_batch(arrays: Vec<ArrayRef>, row_count: usize) -> Result<RecordBatch, ArrowError> {

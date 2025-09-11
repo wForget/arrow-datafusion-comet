@@ -22,6 +22,7 @@ mod map;
 mod range_partitioner;
 pub mod row;
 mod shuffle_writer;
+mod stream_codec;
 
 pub use codec::{read_ipc_compressed, CompressionCodec, ShuffleBlockWriter};
 pub use comet_partitioning::CometPartitioning;
