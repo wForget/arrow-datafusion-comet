@@ -74,7 +74,9 @@ class ParquetReadFromFakeHadoopFsSuite extends CometTestBase with AdaptiveSparkP
         .startsWith(FakeHDFSFileSystem.PREFIX))
   }
 
-  ignore("test native_datafusion scan on fake fs") {
+  test("test native_datafusion scan on fake fs") {
+    assume(featureEnabled("hdfs-opendal"))
+
     val testFilePath =
       s"${FakeHDFSFileSystem.PREFIX}${fake_root_dir.getAbsolutePath}/data/test-file.parquet"
     writeTestParquetFile(testFilePath)
