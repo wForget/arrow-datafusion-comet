@@ -35,7 +35,7 @@ import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregat
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.V2CommandExec
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -432,33 +432,44 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
       // exchange. It is only used for Comet native execution. We only transform Spark broadcast
       // exchange to Comet broadcast exchange if its downstream is a Comet native plan or if the
       // broadcast exchange is forced to be enabled by Comet config.
-      case plan if plan.children.exists(_.isInstanceOf[BroadcastExchangeExec]) =>
-        val newChildren = plan.children.map {
-          case b: BroadcastExchangeExec
-              if isCometNative(b.child) &&
-                CometConf.COMET_EXEC_BROADCAST_EXCHANGE_ENABLED.get(conf) =>
-            QueryPlanSerde.operator2Proto(b) match {
-              case Some(nativeOp) =>
-                val cometOp = CometBroadcastExchangeExec(b, b.output, b.mode, b.child)
-                CometSinkPlaceHolder(nativeOp, b, cometOp)
-              case None => b
-            }
-          case other => other
-        }
-        if (!newChildren.exists(_.isInstanceOf[BroadcastExchangeExec])) {
-          val newPlan = apply(plan.withNewChildren(newChildren))
-          if (isCometNative(newPlan) || isCometBroadCastForceEnabled(conf)) {
-            newPlan
-          } else {
-            if (isCometNative(newPlan)) {
-              val reason =
-                getCometBroadcastNotEnabledReason(conf).getOrElse("no reason available")
-              withInfo(plan, s"Broadcast is not enabled: $reason")
-            }
-            plan
-          }
-        } else {
-          plan
+//      case plan if plan.children.exists(_.isInstanceOf[BroadcastExchangeExec]) =>
+//        val newChildren = plan.children.map {
+//          case b: BroadcastExchangeExec
+//              if isCometNative(b.child) &&
+//                CometConf.COMET_EXEC_BROADCAST_EXCHANGE_ENABLED.get(conf) =>
+//            QueryPlanSerde.operator2Proto(b) match {
+//              case Some(nativeOp) =>
+//                val cometOp = CometBroadcastExchangeExec(b, b.output, b.mode, b.child)
+//                CometSinkPlaceHolder(nativeOp, b, cometOp)
+//              case None => b
+//            }
+//          case other => other
+//        }
+//        if (!newChildren.exists(_.isInstanceOf[BroadcastExchangeExec])) {
+//          val newPlan = apply(plan.withNewChildren(newChildren))
+//          if (isCometNative(newPlan) || isCometBroadCastForceEnabled(conf)) {
+//            newPlan
+//          } else {
+//            if (isCometNative(newPlan)) {
+//              val reason =
+//                getCometBroadcastNotEnabledReason(conf).getOrElse("no reason available")
+//              withInfo(plan, s"Broadcast is not enabled: $reason")
+//            }
+//            plan
+//          }
+//        } else {
+//          plan
+//        }
+
+      case b @ BroadcastExchangeExec(_: HashedRelationBroadcastMode, _)
+          if isCometNative(b.child) &&
+            CometConf.COMET_EXEC_BROADCAST_EXCHANGE_ENABLED.get(conf) =>
+        QueryPlanSerde.operator2Proto(b) match {
+          case Some(nativeOp) =>
+            val cometOp = CometBroadcastExchangeExec(b, b.output, b.mode, b.child)
+            CometSinkPlaceHolder(nativeOp, b, cometOp)
+          case None =>
+            b
         }
 
       // this case should be checked only after the previous case checking for a

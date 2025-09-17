@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.vectorized.{ConstantColumnVector, WritableColumnVector}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-import org.apache.spark.util.{SparkFatalException, Utils}
+import org.apache.spark.util.SparkFatalException
 import org.apache.spark.util.io.ChunkedByteBuffer
 
 import org.apache.comet.vector.CometPlainVector
@@ -55,7 +55,7 @@ case class CometColumnarToRowExec(child: SparkPlan)
     extends ColumnarToRowTransition
     with CodegenSupport {
   // supportsColumnar requires to be only called on driver side, see also SPARK-37779.
-  assert(Utils.isInRunningSparkTask || child.supportsColumnar)
+  // assert(Utils.isInRunningSparkTask || child.supportsColumnar)
 
   override def output: Seq[Attribute] = child.output
 

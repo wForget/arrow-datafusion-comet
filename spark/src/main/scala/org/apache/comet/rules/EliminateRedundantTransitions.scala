@@ -21,10 +21,10 @@ package org.apache.comet.rules
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.comet.{CometCollectLimitExec, CometColumnarToRowExec, CometPlan, CometSparkToColumnarExec}
+import org.apache.spark.sql.comet.{CometBroadcastExchangeExec, CometCollectLimitExec, CometColumnarToRowExec, CometPlan, CometSparkToColumnarExec}
 import org.apache.spark.sql.comet.execution.shuffle.{CometColumnarShuffle, CometShuffleExchangeExec}
 import org.apache.spark.sql.execution.{ColumnarToRowExec, RowToColumnarExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.QueryStageExec
+import org.apache.spark.sql.execution.adaptive.{AQEShuffleReadExec, BroadcastQueryStageExec, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 import org.apache.comet.CometConf
@@ -77,18 +77,31 @@ case class EliminateRedundantTransitions(session: SparkSession) extends Rule[Spa
           // and CometSparkToColumnarExec
           sparkToColumnar.child
         }
+      case ColumnarToRowExec(b @ BroadcastQueryStageExec(_, child, _))
+          if child.supportsColumnar =>
+        b
       case c @ ColumnarToRowExec(child) if hasCometNativeChild(child) =>
-        val op = CometColumnarToRowExec(child)
-        if (c.logicalLink.isEmpty) {
-          op.unsetTagValue(SparkPlan.LOGICAL_PLAN_TAG)
-          op.unsetTagValue(SparkPlan.LOGICAL_PLAN_INHERITED_TAG)
-        } else {
-          c.logicalLink.foreach(op.setLogicalLink)
+        child match {
+          case sparkToColumnar: CometSparkToColumnarExec =>
+            sparkToColumnar.child
+          case broadcastExchange: CometBroadcastExchangeExec => broadcastExchange
+          case _ =>
+            val op = CometColumnarToRowExec(child)
+            if (c.logicalLink.isEmpty) {
+              op.unsetTagValue(SparkPlan.LOGICAL_PLAN_TAG)
+              op.unsetTagValue(SparkPlan.LOGICAL_PLAN_INHERITED_TAG)
+            } else {
+              c.logicalLink.foreach(op.setLogicalLink)
+            }
+            op
         }
-        op
       case CometColumnarToRowExec(sparkToColumnar: CometSparkToColumnarExec) =>
         sparkToColumnar.child
       case CometSparkToColumnarExec(child: CometSparkToColumnarExec) => child
+      case CometColumnarToRowExec(child: CometBroadcastExchangeExec) =>
+        child
+      case b @ CometBroadcastExchangeExec(_, _, _, CometColumnarToRowExec(child)) =>
+        b.copy(child = child)
       // Spark adds `RowToColumnar` under Comet columnar shuffle. But it's redundant as the
       // shuffle takes row-based input.
       case s @ CometShuffleExchangeExec(
@@ -115,6 +128,7 @@ case class EliminateRedundantTransitions(session: SparkSession) extends Rule[Spa
     op match {
       case c: QueryStageExec => hasCometNativeChild(c.plan)
       case c: ReusedExchangeExec => hasCometNativeChild(c.child)
+      case c: AQEShuffleReadExec => hasCometNativeChild(c.child)
       case _ => op.exists(_.isInstanceOf[CometPlan])
     }
   }

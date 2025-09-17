@@ -101,6 +101,13 @@ allowed_expr+="|^scala/collection/"
 allowed_expr+="|^scala/jdk/"
 allowed_expr+="|^scala/util/"
 
+# TODO: add reason
+allowed_expr+="|^org/apache/spark/sql/execution/$"
+allowed_expr+="|^org/apache/spark/sql/execution/joins/$"
+allowed_expr+="|^org/apache/spark/sql/execution/joins/CometHashedRelation.*$"
+allowed_expr+="|^org/apache/spark/sql/execution/joins/CometLongHashedRelation.class$"
+allowed_expr+="|^org/apache/spark/sql/execution/joins/CometUnsafeHashedRelation.class$"
+
 allowed_expr+=")"
 declare -i bad_artifacts=0
 declare -a bad_contents

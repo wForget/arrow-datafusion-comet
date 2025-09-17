@@ -34,9 +34,10 @@ import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.comet.util.Utils
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.execution.{ColumnarToRowExec, SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.{ColumnarToRowExec, LocalTableScanExec, RowToColumnarExec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.adaptive.{AQEShuffleReadExec, ShuffleQueryStageExec}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, BroadcastExchangeLike, ReusedExchangeExec}
+import org.apache.spark.sql.execution.joins.{CometHashedRelation, HashedRelationBroadcastMode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -136,6 +137,9 @@ case class CometBroadcastExchangeExec(
           case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan), _)
               if plan.isInstanceOf[CometPlan] =>
             CometExec.getByteArrayRdd(plan.asInstanceOf[CometPlan]).collect()
+          // see AQEPropagateEmptyRelation
+          case RowToColumnarExec(LocalTableScanExec(_, rows)) if rows.isEmpty =>
+            Array.empty[(Long, ChunkedByteBuffer)]
           case AQEShuffleReadExec(s: ShuffleQueryStageExec, _) =>
             throw new CometRuntimeException(
               "Child of CometBroadcastExchangeExec should be CometExec, " +
@@ -171,12 +175,19 @@ case class CometBroadcastExchangeExec(
             dataSize)
         }
 
+        val relation = CometHashedRelation(
+          batches,
+          originalPlan
+            .asInstanceOf[BroadcastExchangeExec]
+            .mode
+            .asInstanceOf[HashedRelationBroadcastMode])
+
         val beforeBroadcast = System.nanoTime()
         longMetric("buildTime") += NANOSECONDS.toMillis(beforeBroadcast - beforeBuild)
 
         // (3.4 only) SPARK-39983 - Broadcast the relation without caching the unserialized object.
         val broadcasted = sparkContext
-          .broadcastInternal(batches, true)
+          .broadcastInternal(relation, true)
           .asInstanceOf[broadcast.Broadcast[Any]]
         longMetric("broadcastTime") += NANOSECONDS.toMillis(System.nanoTime() - beforeBroadcast)
         val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
@@ -219,7 +230,7 @@ case class CometBroadcastExchangeExec(
 
   // This is basically for unit test only, called by `executeCollect` indirectly.
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val broadcasted = executeBroadcast[Array[ChunkedByteBuffer]]()
+    val broadcasted = executeBroadcast[CometHashedRelation]()
 
     new CometBatchRDD(sparkContext, getNumPartitions(), broadcasted)
   }
@@ -277,7 +288,7 @@ object CometBroadcastExchangeExec {
 class CometBatchRDD(
     sc: SparkContext,
     @volatile var numPartitions: Int,
-    value: broadcast.Broadcast[Array[ChunkedByteBuffer]])
+    value: broadcast.Broadcast[CometHashedRelation])
     extends RDD[ColumnarBatch](sc, Nil) {
 
   override def getPartitions: Array[Partition] = (0 until numPartitions).toArray.map { i =>
@@ -286,7 +297,7 @@ class CometBatchRDD(
 
   override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
     val partition = split.asInstanceOf[CometBatchPartition]
-    partition.value.value.toIterator
+    partition.value.value.values.toIterator
       .flatMap(Utils.decodeBatches(_, this.getClass.getSimpleName))
   }
 
@@ -299,5 +310,5 @@ class CometBatchRDD(
 
 class CometBatchPartition(
     override val index: Int,
-    val value: broadcast.Broadcast[Array[ChunkedByteBuffer]])
+    val value: broadcast.Broadcast[CometHashedRelation])
     extends Partition {}
