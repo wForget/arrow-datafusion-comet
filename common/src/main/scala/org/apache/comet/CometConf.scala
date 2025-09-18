@@ -317,7 +317,7 @@ object CometConf extends ShimCometConf {
       .doc("Experimental feature to force Spark to replace SortMergeJoin with ShuffledHashJoin " +
         s"for improved performance. This feature is not stable yet. $TUNING_GUIDE.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val COMET_EXEC_SHUFFLE_WITH_HASH_PARTITIONING_ENABLED: ConfigEntry[Boolean] =
     conf("spark.comet.native.shuffle.partitioning.hash.enabled")
