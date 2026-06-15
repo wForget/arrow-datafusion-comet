@@ -69,6 +69,11 @@ name = "shuffle_bench"
 path = "src/bin/shuffle_bench.rs"
 required-features = ["shuffle-bench"]
 
+[[bin]]
+name = "ipc_write_bench"
+path = "src/bin/ipc_write_bench.rs"
+required-features = ["shuffle-bench"]
+
 [[bench]]
 name = "shuffle_writer"
 harness = false
