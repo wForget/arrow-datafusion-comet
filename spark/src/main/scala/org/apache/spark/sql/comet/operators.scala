@@ -36,7 +36,6 @@ import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.comet.execution.arrow.{CometArrowStream, CometNativeArrowSource}
 import org.apache.spark.sql.comet.execution.shuffle.CometShuffleExchangeExec
-import org.apache.spark.sql.comet.util.Utils
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AQEShuffleReadExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec}
@@ -46,7 +45,6 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, DataType, DateType, DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType, ShortType, StringType, TimestampNTZType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
-import org.apache.spark.util.io.ChunkedByteBuffer
 
 import com.google.common.base.Objects
 import com.google.protobuf.CodedOutputStream
@@ -390,15 +388,6 @@ object CometExec {
       partitionIdx,
       broadcastedHadoopConfForEncryption,
       encryptedFilePaths)
-  }
-
-  /**
-   * Executes this Comet operator and serialized output ColumnarBatch into bytes.
-   */
-  def getByteArrayRdd(cometPlan: CometPlan): RDD[(Long, ChunkedByteBuffer)] = {
-    cometPlan.executeColumnar().mapPartitionsInternal { iter =>
-      Utils.serializeBatches(iter)
-    }
   }
 }
 

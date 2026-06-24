@@ -26,6 +26,7 @@ import java.nio.channels.Channels
 import scala.jdk.CollectionConverters._
 
 import org.apache.arrow.c.CDataDictionaryProvider
+import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector._
 import org.apache.arrow.vector.complex.{ListVector, MapVector, StructVector}
 import org.apache.arrow.vector.dictionary.DictionaryProvider
@@ -225,31 +226,62 @@ object Utils extends CometTypeShim with Logging {
    *   the output stream
    */
   def serializeBatches(batches: Iterator[ColumnarBatch]): Iterator[(Long, ChunkedByteBuffer)] = {
-    batches.map { batch =>
-      val dictionaryProvider: CDataDictionaryProvider = new CDataDictionaryProvider
+    val buffered = batches.buffered
+
+    val headBatchOpt = buffered.headOption
+    if (headBatchOpt.isEmpty) {
+      return Iterator.single((0L, new ChunkedByteBuffer(Array.empty[ByteBuffer])))
+    }
+
+    var allocator: BufferAllocator = null
+    var targetRoot: VectorSchemaRoot = null
+    try {
+      allocator = org.apache.comet.CometArrowAllocator
+        .newChildAllocator("serialize-batches", 0, Long.MaxValue)
+
+      val (fieldVectors, batchProviderOpt) = getBatchFieldVectors(headBatchOpt.get)
+
+      val schema = new Schema(fieldVectors.map(_.getField).asJava)
+      targetRoot = VectorSchemaRoot.create(schema, allocator)
+      targetRoot.allocateNew()
+
+      var totalRows = 0L
+      buffered.foreach { batch =>
+        val (fieldVectors, _) = getBatchFieldVectors(batch)
+        val sourceRoot = new VectorSchemaRoot(fieldVectors.asJava)
+        if (fieldVectors.isEmpty) {
+          // VSR cannot infer rowCount without field vectors
+          sourceRoot.setRowCount(batch.numRows())
+        }
+        totalRows += batch.numRows()
+        VectorSchemaRootAppender.append(targetRoot, sourceRoot)
+        sourceRoot.close()
+      }
 
       val codec = CompressionCodec.createCodec(SparkEnv.get.conf)
       val cbbos = new ChunkedByteBufferOutputStream(1024 * 1024, ByteBuffer.allocate)
       val out = new DataOutputStream(codec.compressedOutputStream(cbbos))
 
-      val (fieldVectors, batchProviderOpt) = getBatchFieldVectors(batch)
-      val root = new VectorSchemaRoot(fieldVectors.asJava)
-      if (fieldVectors.isEmpty) {
-        // VSR cannot infer rowCount without field vectors
-        root.setRowCount(batch.numRows())
+      val provider = batchProviderOpt.getOrElse(new CDataDictionaryProvider)
+      val writer = new ArrowStreamWriter(targetRoot, provider, Channels.newChannel(out))
+      try {
+        writer.start()
+        writer.writeBatch()
+      } finally {
+        writer.close()
       }
-      val provider = batchProviderOpt.getOrElse(dictionaryProvider)
-
-      val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(out))
-      writer.start()
-      writer.writeBatch()
-      root.clear()
-      writer.close()
 
       if (out.size() > 0) {
-        (batch.numRows().toLong, cbbos.toChunkedByteBuffer)
+        Iterator.single((totalRows, cbbos.toChunkedByteBuffer))
       } else {
-        (batch.numRows().toLong, new ChunkedByteBuffer(Array.empty[ByteBuffer]))
+        Iterator.single((0L, new ChunkedByteBuffer(Array.empty[ByteBuffer])))
+      }
+    } finally {
+      if (targetRoot != null) {
+        targetRoot.close()
+      }
+      if (allocator != null) {
+        allocator.close()
       }
     }
   }

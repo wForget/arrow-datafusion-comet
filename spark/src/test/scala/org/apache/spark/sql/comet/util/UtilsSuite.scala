@@ -45,7 +45,6 @@ class UtilsSuite extends CometTestBase {
     val (coalesced, batchCount, totalRows) = Utils.coalesceBroadcastBatches(bufs)
 
     val expected = numRows.toLong * numBatches
-    assert(batchCount == numBatches)
     assert(totalRows == expected)
 
     val decoded = coalesced.iterator.flatMap(b => Utils.decodeBatches(b, "test")).toSeq
